@@ -2,7 +2,7 @@
 
 A production-grade REST API for payment account management, built with Spring Boot 3, JWT authentication, role-based access control, and Clean Architecture (DDD).
 
-Built a project showcasing enterprise-grade Java backend development skills applicable to fintech, banking, and SaaS platforms.
+Built as a project showcasing enterprise-grade Java backend development skills applicable to fintech, banking, and SaaS platforms.
 
 ---
 
@@ -21,6 +21,15 @@ Multi-module Maven project following **Clean Architecture** (Hexagonal / Ports &
 │  domain        Pure business model (no framework deps)     │
 └────────────────────────────────────────────────────────────┘
 ```
+
+Dependency rule flows strictly inward: `exposition → infrastructure → application → domain`
+
+| Module | Responsibility |
+|--------|---------------|
+| `domain` | Pure domain models (`Account`, `User`, `Transaction`, enums) and domain exceptions. No Spring, no JPA. |
+| `application` | Use-case services (`AccountService`, `AuthService`, `TransactionService`), DTOs, and output port interfaces (`AccountRepositoryPort`, `JwtPort`). |
+| `infrastructure` | Port implementations: JPA entities, Spring Data repositories, adapters, `JwtService`, `CustomUserDetailsService`, `SecurityConfig`. |
+| `exposition` | REST controllers, `GlobalExceptionHandler`, OpenAPI config, and `PaymentAccountApplication` entry point. |
 
 ---
 
@@ -45,10 +54,10 @@ Multi-module Maven project following **Clean Architecture** (Hexagonal / Ports &
 - **Java 21** — Records, sealed interfaces, virtual threads, modern idioms
 - **Spring Boot 3.3** — Web, Security, Validation, Actuator
 - **Spring Security 6** — JWT filter chain, `@EnableMethodSecurity`
-- **JJWT 0.12** — Access + refresh token generation and validation
+- **JJWT 0.12.3** — Access + refresh token generation and validation
 - **Spring Data JPA** — PostgreSQL persistence with pagination
-- **SpringDoc OpenAPI 2** — Swagger UI at `/swagger-ui.html`
-- **Testcontainers** — Real PostgreSQL in integration tests
+- **SpringDoc OpenAPI 2.5** — Swagger UI at `/swagger-ui.html`
+- **Testcontainers 1.19** — Real PostgreSQL in integration tests
 - **Docker / Docker Compose** — One-command local setup
 
 ---
@@ -57,35 +66,41 @@ Multi-module Maven project following **Clean Architecture** (Hexagonal / Ports &
 
 ### Prerequisites
 - Java 21+
-- Docker & Docker Compose
+- Maven 3.9+
+- Docker & Docker Compose (required for integration tests and local PostgreSQL)
 
 ### Run locally
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/your-username/payment-account-api.git
+git clone https://github.com/<your-username>/payment-account-api.git
 cd payment-account-api
 
 # 2. Start PostgreSQL
 docker-compose up -d postgres
 
 # 3. Build and run
-./mvnw clean install -DskipTests
-./mvnw spring-boot:run -pl exposition
+mvn clean install -DskipTests
+mvn spring-boot:run -pl exposition
 
 # 4. Open Swagger UI
-open http://localhost:8080/swagger-ui.html
+# http://localhost:8080/swagger-ui.html
 ```
 
 ### Run tests
 
 ```bash
-# Unit tests (no Docker required)
-./mvnw test -pl domain,application
+# Unit tests only (no Docker required)
+mvn test -pl exposition -Dtest=AccountServiceTest
 
-# Full test suite including integration (requires Docker)
-./mvnw verify
+# Full test suite including integration tests (requires Docker)
+mvn test -pl exposition
+
+# All modules
+mvn test
 ```
+
+Integration tests use Testcontainers and spin up a real PostgreSQL container. They are skipped automatically when Docker is unavailable.
 
 ---
 
@@ -116,6 +131,14 @@ open http://localhost:8080/swagger-ui.html
 |---|---|---|---|
 | POST | `/api/v1/accounts/{id}/transactions` | USER | CREDIT or DEBIT |
 | GET | `/api/v1/accounts/{id}/transactions` | USER | List (paginated, filterable) |
+
+### Public endpoints
+
+| Endpoint | Description |
+|---|---|
+| `/actuator/health` | Application health check |
+| `/swagger-ui.html` | Swagger UI |
+| `/v3/api-docs/**` | OpenAPI spec |
 
 ### Pagination parameters
 
@@ -184,7 +207,8 @@ AuthService.login()
   1. authenticationManager.authenticate(email, plainPassword)
         │
         └─► DaoAuthenticationProvider
-              a. Load User from DB by email  (UserDetailsService)
+              a. CustomUserDetailsService.loadUserByUsername(email)
+                    → loads User from DB, maps role to GrantedAuthority
               b. BCrypt.matches(plainPassword, storedHash)
                     → 401 Unauthorized if wrong password
         │
@@ -204,7 +228,7 @@ Request  →  Authorization: Bearer <accessToken>
 JwtAuthenticationFilter  (runs before every request)
   1. Extract token from Authorization header
   2. Extract email from JWT claims
-  3. Load UserDetails from DB
+  3. Load UserDetails via CustomUserDetailsService
   4. Validate token (signature + expiry)
   5. Set authentication in SecurityContextHolder
         │
@@ -241,6 +265,16 @@ All errors follow the standard `application/problem+json` format:
 }
 ```
 
+| Exception | HTTP Status |
+|---|---|
+| `MethodArgumentNotValidException` | 400 Bad Request |
+| `AccountNotFoundException` | 404 Not Found |
+| `UserAlreadyExistsException` | 409 Conflict |
+| `InsufficientFundsException` | 422 Unprocessable Entity |
+| `UnauthorizedAccessException` / `AccessDeniedException` | 403 Forbidden |
+| `BadCredentialsException` | 401 Unauthorized |
+| Unhandled exceptions | 500 Internal Server Error |
+
 ---
 
 ## Project Structure
@@ -252,13 +286,14 @@ payment-account-api/
 │   └── exception/
 ├── application/                    # Use cases + ports
 │   ├── service/  AuthService, AccountService, TransactionService
-│   ├── port/in|out/
+│   ├── port/out/  AccountRepositoryPort, UserRepositoryPort, JwtPort
 │   └── dto/request|response/
 ├── infrastructure/                 # Adapters
-│   ├── security/  JwtService, SecurityConfig, JwtAuthenticationFilter
+│   ├── security/  JwtService, JwtAuthenticationFilter,
+│   │              CustomUserDetailsService, SecurityConfig
 │   └── persistence/  JPA entities, repositories, adapters
 ├── exposition/                     # REST + entry point
-│   ├── controller/  Auth, Account, Transaction
+│   ├── controller/  AuthController, AccountController, TransactionController
 │   ├── exception/  GlobalExceptionHandler
 │   └── config/  OpenApiConfig
 ├── docker-compose.yml
@@ -277,6 +312,9 @@ Short-lived access tokens (15 min) reduce the attack window if intercepted. Refr
 
 **Why NUMERIC(19,4) for monetary amounts?**
 Floating-point types (DOUBLE, FLOAT) cannot represent all decimal values exactly. `BigDecimal` in Java + `NUMERIC(19,4)` in PostgreSQL guarantees exact arithmetic — critical for financial systems.
+
+**Why `CustomUserDetailsService`?**
+Spring Security's `DaoAuthenticationProvider` requires a `UserDetailsService`. The custom implementation loads users by email (rather than username) from the domain's `UserRepositoryPort`, keeping the security layer properly wired to the Clean Architecture port — no direct JPA dependency in the security config.
 
 ---
 
