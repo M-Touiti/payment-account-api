@@ -42,7 +42,7 @@ Multi-module Maven project following **Clean Architecture** (Hexagonal / Ports &
 
 ## Tech Stack
 
-- **Java 17** — Records, sealed interfaces, modern idioms
+- **Java 21** — Records, sealed interfaces, virtual threads, modern idioms
 - **Spring Boot 3.3** — Web, Security, Validation, Actuator
 - **Spring Security 6** — JWT filter chain, `@EnableMethodSecurity`
 - **JJWT 0.12** — Access + refresh token generation and validation
@@ -56,7 +56,7 @@ Multi-module Maven project following **Clean Architecture** (Hexagonal / Ports &
 ## Getting Started
 
 ### Prerequisites
-- Java 17+
+- Java 21+
 - Docker & Docker Compose
 
 ### Run locally

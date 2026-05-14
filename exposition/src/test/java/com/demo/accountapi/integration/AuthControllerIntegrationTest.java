@@ -2,6 +2,7 @@ package com.demo.accountapi.integration;
 
 import com.demo.accountapi.application.dto.request.LoginRequest;
 import com.demo.accountapi.application.dto.request.RegisterRequest;
+import com.demo.accountapi.exposition.PaymentAccountApplication;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,9 +25,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Integration tests for auth endpoints.
  * Uses a real PostgreSQL database via Testcontainers.
  */
-@SpringBootTest
+@SpringBootTest(classes = PaymentAccountApplication.class)
 @AutoConfigureMockMvc
-@Testcontainers
+@Testcontainers(disabledWithoutDocker = true)
 class AuthControllerIntegrationTest {
 
     @Container
