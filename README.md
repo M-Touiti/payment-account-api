@@ -161,6 +161,70 @@ curl -X POST http://localhost:8080/api/v1/accounts/{accountId}/transactions \
 
 ---
 
+## Authentication Flow
+
+### Registration
+```
+POST /api/v1/auth/register  { email, password }
+        │
+        ▼
+AuthService.register()
+  1. Check email not already taken  →  409 Conflict if duplicate
+  2. BCrypt-hash the plain password
+  3. Save User to DB with hashed password
+  4. Return UserResponse (no tokens)
+```
+
+### Login
+```
+POST /api/v1/auth/login  { email, password }
+        │
+        ▼
+AuthService.login()
+  1. authenticationManager.authenticate(email, plainPassword)
+        │
+        └─► DaoAuthenticationProvider
+              a. Load User from DB by email  (UserDetailsService)
+              b. BCrypt.matches(plainPassword, storedHash)
+                    → 401 Unauthorized if wrong password
+        │
+        ▼
+  2. Generate accessToken  (JWT, 15 min)
+  3. Generate refreshToken (JWT, 7 days)
+  4. Return { accessToken, refreshToken, tokenType: "Bearer" }
+```
+
+The plain password is never stored — only the BCrypt hash.
+
+### Authenticated requests
+```
+Request  →  Authorization: Bearer <accessToken>
+        │
+        ▼
+JwtAuthenticationFilter  (runs before every request)
+  1. Extract token from Authorization header
+  2. Extract email from JWT claims
+  3. Load UserDetails from DB
+  4. Validate token (signature + expiry)
+  5. Set authentication in SecurityContextHolder
+        │
+        ▼
+Controller executes with authenticated principal
+@PreAuthorize("hasRole('ADMIN')") enforces role from token claims
+```
+
+### Token refresh
+```
+POST /api/v1/auth/refresh  { refreshToken }
+        │
+        ▼
+  1. Extract email from refresh token
+  2. Validate signature + expiry
+  3. Issue new accessToken (refreshToken unchanged)
+```
+
+---
+
 ## Error Responses (RFC 7807)
 
 All errors follow the standard `application/problem+json` format:
