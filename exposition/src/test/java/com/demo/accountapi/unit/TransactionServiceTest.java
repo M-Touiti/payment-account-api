@@ -41,7 +41,7 @@ class TransactionServiceTest {
     @BeforeEach
     void setUp() {
         AccountService accountService = new AccountService(accountRepository);
-        transactionService = new TransactionService(transactionRepository, accountService);
+        transactionService = new TransactionService(transactionRepository, accountRepository, accountService);
         testUser = new User.Builder()
                 .id(UUID.randomUUID()).email("user@test.com")
                 .passwordHash("hash").role(Role.USER)

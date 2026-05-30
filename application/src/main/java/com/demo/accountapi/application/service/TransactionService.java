@@ -2,6 +2,7 @@ package com.demo.accountapi.application.service;
 
 import com.demo.accountapi.application.dto.request.CreateTransactionRequest;
 import com.demo.accountapi.application.dto.response.TransactionResponse;
+import com.demo.accountapi.application.port.out.AccountRepositoryPort;
 import com.demo.accountapi.application.port.out.TransactionRepositoryPort;
 import com.demo.accountapi.domain.model.Account;
 import com.demo.accountapi.domain.model.Transaction;
@@ -18,11 +19,14 @@ import java.util.UUID;
 public class TransactionService {
 
     private final TransactionRepositoryPort transactionRepository;
+    private final AccountRepositoryPort accountRepository;
     private final AccountService accountService;
 
     public TransactionService(TransactionRepositoryPort transactionRepository,
+                               AccountRepositoryPort accountRepository,
                                AccountService accountService) {
         this.transactionRepository = transactionRepository;
+        this.accountRepository = accountRepository;
         this.accountService = accountService;
     }
 
@@ -36,6 +40,8 @@ public class TransactionService {
         } else {
             account.debit(request.amount());
         }
+
+        accountRepository.save(account);
 
         Transaction transaction = Transaction.record(
                 accountId, request.type(), request.amount(),
