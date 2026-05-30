@@ -1,6 +1,6 @@
 # payment-account-api
 
-![CI](https://github.com/<your-username>/payment-account-api/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/M-Touiti/payment-account-api/actions/workflows/ci.yml/badge.svg)
 ![Java](https://img.shields.io/badge/Java-21-blue)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
@@ -81,7 +81,7 @@ graph TD
 | **Validation** | Bean Validation on all request bodies |
 | **Error handling** | RFC 7807 `ProblemDetail` responses for all error types |
 | **API docs** | OpenAPI 3 / Swagger UI — fully authenticated |
-| **Tests** | Unit (Mockito) + integration (MockMvc + Testcontainers) |
+| **Tests** | 22 test cases: 3 unit classes (Mockito) + 3 integration classes (MockMvc + Testcontainers) |
 
 ---
 
@@ -109,7 +109,7 @@ graph TD
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/<your-username>/payment-account-api.git
+git clone https://github.com/M-Touiti/payment-account-api.git
 cd payment-account-api
 
 # 2. Start PostgreSQL
@@ -126,8 +126,8 @@ mvn spring-boot:run -pl exposition
 ### Run tests
 
 ```bash
-# Unit tests only (no Docker required)
-mvn test -pl exposition -Dtest=AccountServiceTest
+# All unit tests (no Docker required)
+mvn test -pl exposition -Dtest="AccountServiceTest,AuthServiceTest,TransactionServiceTest"
 
 # Full test suite including integration tests (requires Docker)
 mvn test -pl exposition
@@ -136,7 +136,7 @@ mvn test -pl exposition
 mvn test
 ```
 
-Integration tests use Testcontainers and spin up a real PostgreSQL container. They are skipped automatically when Docker is unavailable.
+Integration tests use Testcontainers and spin up a real PostgreSQL container automatically. They are skipped when Docker is unavailable (`@Testcontainers(disabledWithoutDocker = true)`).
 
 ---
 
@@ -300,21 +300,30 @@ All errors follow the standard `application/problem+json` format:
 
 ```
 payment-account-api/
-├── domain/                         # Pure business logic
-│   ├── model/  Account, User, Transaction, enums
+├── domain/                          # Pure business logic
+│   ├── model/   Account, User, Transaction, enums
 │   └── exception/
-├── application/                    # Use cases + ports
+├── application/                     # Use cases + ports
 │   ├── service/  AuthService, AccountService, TransactionService
 │   ├── port/out/  AccountRepositoryPort, UserRepositoryPort, JwtPort
 │   └── dto/request|response/
-├── infrastructure/                 # Adapters
+├── infrastructure/                  # Adapters
 │   ├── security/  JwtService, JwtAuthenticationFilter,
 │   │              CustomUserDetailsService, SecurityConfig
 │   └── persistence/  JPA entities, repositories, adapters
-├── exposition/                     # REST + entry point
+├── exposition/                      # REST + entry point
 │   ├── controller/  AuthController, AccountController, TransactionController
 │   ├── exception/  GlobalExceptionHandler
-│   └── config/  OpenApiConfig
+│   ├── config/  OpenApiConfig
+│   └── src/test/
+│       ├── unit/        AccountServiceTest, AuthServiceTest,
+│       │                TransactionServiceTest
+│       └── integration/ AuthControllerIntegrationTest,
+│                        AccountControllerIntegrationTest,
+│                        TransactionControllerIntegrationTest
+├── docker/init.sql
+├── .github/workflows/ci.yml
+├── .env.example
 ├── docker-compose.yml
 └── Dockerfile
 ```

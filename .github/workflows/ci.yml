@@ -26,7 +26,7 @@ jobs:
         run: mvn clean install -DskipTests
 
       - name: Unit tests
-        run: mvn test -pl exposition -Dtest=AccountServiceTest
+        run: mvn test -pl exposition -Dtest="AccountServiceTest,AuthServiceTest,TransactionServiceTest"
 
       - name: Integration tests
-        run: mvn test -pl exposition -Dtest=AuthControllerIntegrationTest
+        run: mvn test -pl exposition -Dtest="AuthControllerIntegrationTest,AccountControllerIntegrationTest,TransactionControllerIntegrationTest"
