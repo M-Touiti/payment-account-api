@@ -1,5 +1,10 @@
 # payment-account-api
 
+![CI](https://github.com/<your-username>/payment-account-api/actions/workflows/ci.yml/badge.svg)
+![Java](https://img.shields.io/badge/Java-21-blue)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-blue)
+
 A production-grade REST API for payment account management, built with Spring Boot 3, JWT authentication, role-based access control, and Clean Architecture (DDD).
 
 Built as a project showcasing enterprise-grade Java backend development skills applicable to fintech, banking, and SaaS platforms.
@@ -8,21 +13,52 @@ Built as a project showcasing enterprise-grade Java backend development skills a
 
 ## Architecture
 
-Multi-module Maven project following **Clean Architecture** (Hexagonal / Ports & Adapters):
+Multi-module Maven project following **Clean Architecture** (Hexagonal / Ports & Adapters).
+Dependency rule flows strictly inward — outer layers depend on inner ones, never the reverse.
 
-```
-┌────────────────────────────────────────────────────────────┐
-│  exposition    REST controllers, error handling, OpenAPI   │
-├────────────────────────────────────────────────────────────┤
-│  infrastructure   JPA adapters, JWT impl, Spring Security  │
-├────────────────────────────────────────────────────────────┤
-│  application   Services, ports (interfaces), DTOs          │
-├────────────────────────────────────────────────────────────┤
-│  domain        Pure business model (no framework deps)     │
-└────────────────────────────────────────────────────────────┘
-```
+```mermaid
+graph TD
+    subgraph EXP["Exposition Layer  ·  HTTP / REST"]
+        C1[AuthController]
+        C2[AccountController]
+        C3[TransactionController]
+        GEH["GlobalExceptionHandler (RFC 7807)"]
+    end
 
-Dependency rule flows strictly inward: `exposition → infrastructure → application → domain`
+    subgraph INF["Infrastructure Layer  ·  Frameworks & Adapters"]
+        SEC["JwtAuthFilter · SecurityConfig\nCustomUserDetailsService"]
+        ADP["AccountRepositoryAdapter\nUserRepositoryAdapter\nTransactionRepositoryAdapter"]
+        DB[(PostgreSQL)]
+    end
+
+    subgraph APP["Application Layer  ·  Use Cases"]
+        SVC["AuthService · AccountService\nTransactionService"]
+        PRT["Output Ports (interfaces)\nAccountRepositoryPort · UserRepositoryPort · JwtPort"]
+    end
+
+    subgraph DOM["Domain Layer  ·  Core Business Logic"]
+        MDL["Account · User · Transaction"]
+        EXC["InsufficientFundsException\nAccountNotFoundException · …"]
+    end
+
+    EXP -- calls --> SVC
+    EXP -- filtered by --> SEC
+    ADP -- implements --> PRT
+    SEC -- reads via --> PRT
+    SVC -- uses --> PRT
+    SVC -- operates on --> MDL
+    ADP <--> DB
+
+    classDef expo fill:#dbeafe,stroke:#3b82f6,color:#1e3a5f
+    classDef infra fill:#fce7f3,stroke:#db2777,color:#500724
+    classDef app fill:#dcfce7,stroke:#16a34a,color:#14532d
+    classDef dom fill:#fef9c3,stroke:#ca8a04,color:#451a03
+
+    class C1,C2,C3,GEH expo
+    class SEC,ADP,DB infra
+    class SVC,PRT app
+    class MDL,EXC dom
+```
 
 | Module | Responsibility |
 |--------|---------------|
@@ -186,65 +222,48 @@ curl -X POST http://localhost:8080/api/v1/accounts/{accountId}/transactions \
 
 ## Authentication Flow
 
-### Registration
-```
-POST /api/v1/auth/register  { email, password }
-        │
-        ▼
-AuthService.register()
-  1. Check email not already taken  →  409 Conflict if duplicate
-  2. BCrypt-hash the plain password
-  3. Save User to DB with hashed password
-  4. Return UserResponse (no tokens)
-```
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client
+    participant Filter as JwtAuthFilter
+    participant Auth as AuthService
+    participant UDS as CustomUserDetailsService
+    participant DB as PostgreSQL
 
-### Login
-```
-POST /api/v1/auth/login  { email, password }
-        │
-        ▼
-AuthService.login()
-  1. authenticationManager.authenticate(email, plainPassword)
-        │
-        └─► DaoAuthenticationProvider
-              a. CustomUserDetailsService.loadUserByUsername(email)
-                    → loads User from DB, maps role to GrantedAuthority
-              b. BCrypt.matches(plainPassword, storedHash)
-                    → 401 Unauthorized if wrong password
-        │
-        ▼
-  2. Generate accessToken  (JWT, 15 min)
-  3. Generate refreshToken (JWT, 7 days)
-  4. Return { accessToken, refreshToken, tokenType: "Bearer" }
-```
+    rect rgb(219, 234, 254)
+        Note over Client,DB: Registration
+        Client->>Auth: POST /auth/register {email, password}
+        Auth->>DB: SELECT — check email not taken
+        DB-->>Auth: empty (or 409 Conflict)
+        Auth->>Auth: BCrypt.hash(password)
+        Auth->>DB: INSERT user
+        Auth-->>Client: 201 UserResponse (no tokens)
+    end
 
-The plain password is never stored — only the BCrypt hash.
+    rect rgb(220, 252, 231)
+        Note over Client,DB: Login
+        Client->>Auth: POST /auth/login {email, password}
+        Auth->>UDS: loadUserByUsername(email)
+        UDS->>DB: SELECT user WHERE email = ?
+        DB-->>UDS: row
+        UDS-->>Auth: UserDetails
+        Auth->>Auth: BCrypt.matches(password, hash) ✓
+        Auth->>Auth: sign accessToken (15 min)
+        Auth->>Auth: sign refreshToken (7 days)
+        Auth-->>Client: {accessToken, refreshToken, tokenType: "Bearer"}
+    end
 
-### Authenticated requests
-```
-Request  →  Authorization: Bearer <accessToken>
-        │
-        ▼
-JwtAuthenticationFilter  (runs before every request)
-  1. Extract token from Authorization header
-  2. Extract email from JWT claims
-  3. Load UserDetails via CustomUserDetailsService
-  4. Validate token (signature + expiry)
-  5. Set authentication in SecurityContextHolder
-        │
-        ▼
-Controller executes with authenticated principal
-@PreAuthorize("hasRole('ADMIN')") enforces role from token claims
-```
-
-### Token refresh
-```
-POST /api/v1/auth/refresh  { refreshToken }
-        │
-        ▼
-  1. Extract email from refresh token
-  2. Validate signature + expiry
-  3. Issue new accessToken (refreshToken unchanged)
+    rect rgb(254, 249, 195)
+        Note over Client,DB: Authenticated Request
+        Client->>Filter: GET /accounts  +  Bearer token
+        Filter->>Filter: extractEmail(token)
+        Filter->>UDS: loadUserByUsername(email)
+        UDS-->>Filter: UserDetails
+        Filter->>Filter: validateToken(signature + expiry) ✓
+        Filter->>Filter: setAuthentication → SecurityContext
+        Note right of Filter: Controller executes with<br/>authenticated principal.<br/>@PreAuthorize enforces roles.
+    end
 ```
 
 ---
